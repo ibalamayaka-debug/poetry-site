@@ -59,23 +59,62 @@ for raw_name, display_name in RAW_CATEGORY_ALIASES.items():
 	DISPLAY_TO_RAW_CATEGORIES.setdefault(display_name, set()).add(raw_name)
 
 
-def dict_factory(cursor, row):
-	d = {}
-	for idx, col in enumerate(cursor.description):
-		d[col[0]] = row[idx]
-	return d
-
 def get_conn():
 	url = os.environ.get("TURSO_DATABASE_URL")
 	token = os.environ.get("TURSO_AUTH_TOKEN")
 	if url and token and libsql:
 		conn = libsql.connect(url, auth_token=token)
-		conn.row_factory = dict_factory
+		# libsql builtins.Connection doesn't have row_factory. We will map rows manually using dict_factory below.
 		return conn
 
 	conn = sqlite3.connect(DB_PATH)
-	conn.row_factory = dict_factory
+	conn.row_factory = sqlite3.Row
 	return conn
+
+def execute_query(query, params=()):
+	conn = get_conn()
+	cur = conn.cursor()
+	cur.execute(query, params)
+	rows = cur.fetchall()
+	
+	# If rows are returned and they are not dict-like, convert them using description
+	if rows and not hasattr(rows[0], 'keys') and type(rows[0]) is tuple:
+		cols = [col[0] for col in cur.description]
+		mapped_rows = [dict(zip(cols, row)) for row in rows]
+		conn.close()
+		return mapped_rows
+	
+	# If using sqlite3.Row, convert to standard dict
+	mapped_rows = [dict(row) for row in rows]
+	conn.close()
+	return mapped_rows
+
+def execute_query_single(query, params=()):
+	conn = get_conn()
+	cur = conn.cursor()
+	cur.execute(query, params)
+	row = cur.fetchone()
+	
+	if not row:
+		conn.close()
+		return None
+		
+	if not hasattr(row, 'keys') and type(row) is tuple:
+		cols = [col[0] for col in cur.description]
+		mapped_row = dict(zip(cols, row))
+		conn.close()
+		return mapped_row
+		
+	mapped_row = dict(row)
+	conn.close()
+	return mapped_row
+
+def execute_write(query, params=()):
+	conn = get_conn()
+	conn.execute(query, params)
+	conn.commit()
+	conn.close()
+
 
 
 def ensure_share_table(conn: sqlite3.Connection) -> None:
