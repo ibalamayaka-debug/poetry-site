@@ -1,0 +1,7 @@
+Flask==3.0.3
+opencc-python-reimplemented==0.1.7
+hanziconv==0.3.2
+qrcode==7.4.2
+pillow==11.1.0
+libsql
+gunicorn

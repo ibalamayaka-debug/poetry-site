@@ -1,0 +1,13 @@
+poetry.db
+poetry.db-journal
+poetry_dump.sql
+poetry_dump.sq
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.aidex/
+.vscode/
+.DS_Store
+*.zip
+*.log

@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>古诗词查询</title>
+	<link rel="stylesheet" href="/static/style.css" />
+	<style>
+		.modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+		.modal-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; border-radius: 8px; }
+		.modal-content textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical; }
+		.modal-actions { margin-top: 15px; text-align: right; }
+		.modal-actions button { margin-left: 10px; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; }
+		.btn-save { background-color: #4CAF50; color: white; }
+		.btn-cancel { background-color: #f44336; color: white; }
+		.edit-trans-btn { background-color: #2196F3; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-left: 10px; }
+	</style>
+</head>
+<body>
+	<main class="container">
+		<header>
+			<h1>古诗词查询</h1>
+			<p>数据来源：GitHub / chinese-poetry</p>
+		</header>
+
+		<section class="panel">
+			<div class="classic-entries">
+				<button type="button" class="entry-card" data-category="道德经">
+					<strong>道德经</strong>
+					<span>先秦哲思 · 81章</span>
+				</button>
+				<button type="button" class="entry-card" data-category="易经">
+					<strong>易经</strong>
+					<span>六十四卦 · 象数辞义</span>
+				</button>
+				<button type="button" class="entry-card" data-category="红楼梦">
+					<strong>红楼梦</strong>
+					<span>120回 · 章回全文</span>
+				</button>
+				<button type="button" class="entry-card" data-category="黄帝内经">
+					<strong>黄帝内经</strong>
+					<span>医家经典 · 问答体原文</span>
+				</button>
+				<button type="button" class="entry-card" data-category="四库全书">
+					<strong>四库全书</strong>
+					<span>古籍总集 · 分卷可检索</span>
+				</button>
+			</div>
+
+			<form id="search-form">
+				<div class="row">
+					<input id="q" type="text" placeholder="输入关键词，如 春江花月夜" />
+					<input id="author" type="text" placeholder="作者，如 李白" list="author-list" />
+					<datalist id="author-list"></datalist>
+					<select id="dynasty">
+						<option value="">全部朝代</option>
+						<option value="唐">唐</option>
+						<option value="宋">宋</option>
+						<option value="元">元</option>
+						<option value="明">明</option>
+						<option value="清">清</option>
+					</select>
+					<select id="category">
+						<option value="">全部分类</option>
+					</select>
+					<button type="submit">查询</button>
+				</div>
+			</form>
+			<div class="quick-filters">
+				<button id="quick-daodejing" type="button">道德经</button>
+				<button id="quick-yijing" type="button">易经</button>
+				<button id="quick-hongloumeng" type="button">红楼梦</button>
+				<button id="quick-neijing" type="button">黄帝内经</button>
+				<button id="quick-siku" type="button">四库全书</button>
+				<button id="quick-reset" type="button">清空筛选</button>
+			</div>
+			<div id="loading" class="loading-overlay">
+				<div class="spinner"></div>
+				<span class="loading-text">正在查询中...</span>
+			</div>
+			<div id="summary"></div>
+			<div class="actions">
+				<div class="collection-tools">
+					<select id="collection-select" aria-label="选择收藏夹"></select>
+					<input id="new-collection-name" type="text" placeholder="新收藏夹名称" />
+					<button id="create-collection" type="button">新建收藏夹</button>
+					<button id="share-collection" type="button">一键分享收藏夹</button>
+				</div>
+				<button id="show-fav" type="button">仅看收藏</button>
+				<label class="toggle-pinyin"><input id="toggle-pinyin" type="checkbox" checked />显示拼音注音</label>
+				<button id="export-md" type="button">导出 Markdown</button>
+				<button id="export-csv" type="button">导出 CSV</button>
+			</div>
+			<div id="stats" class="stats"></div>
+			<div id="results"></div>
+			<div class="pager">
+				<button id="prev">上一页</button>
+				<span id="page-info">第 1 页 / 共 1 页</span>
+				<button id="next">下一页</button>
+				<div class="page-jump">
+					<label for="jump-page">跳转到</label>
+					<input id="jump-page" type="number" min="1" step="1" placeholder="页码" />
+					<button id="jump-btn" type="button">跳转</button>
+				</div>
+			</div>
+		</section>
+	</main>
+
+	<div id="trans-modal" class="modal">
+		<div class="modal-content">
+			<h3>编辑白话文翻译</h3>
+			<textarea id="trans-input" rows="6" placeholder="在此输入白话文翻译..."></textarea>
+			<div class="modal-actions">
+				<button id="trans-cancel" type="button" class="btn-cancel">取消</button>
+				<button id="trans-save" type="button" class="btn-save">保存并提交</button>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		const state = {
+			page: 1,
+			pageSize: 20,
+			total: 0,
+			onlyFavorites: false,
+			showPinyin: true,
+			activeCollection: '默认收藏夹'
+		};
+		const COLLECTIONS_STORAGE_KEY = 'poetry_collections_v1';
+		const LEGACY_FAVORITES_KEY = 'poetry_favorites';
+		const collectionsState = loadCollectionsState();
+
+		function currentFavorites() {
+			return collectionsState.groups[state.activeCollection] || {};
+		}
+
+		function loadCollectionsState() {
+			let groups = {};
+			let active = '默认收藏夹';
+
+			try {
+				const raw = localStorage.getItem(COLLECTIONS_STORAGE_KEY);
+				if (raw) {
+					const parsed = JSON.parse(raw);
+					if (parsed && typeof parsed === 'object' && parsed.groups && typeof parsed.groups === 'object') {
+						groups = parsed.groups;
+						active = typeof parsed.active === 'string' && parsed.active in groups ? parsed.active : active;
+					}
+				}
+			} catch {
+				groups = {};
+			}
+
+			if (!Object.keys(groups).length) {
+				let legacy = {};
+				try {
+					legacy = JSON.parse(localStorage.getItem(LEGACY_FAVORITES_KEY) || '{}');
+				} catch {
+					legacy = {};
+				}
+				groups = { '默认收藏夹': legacy };
+				active = '默认收藏夹';
+			}
+
+			state.activeCollection = active in groups ? active : Object.keys(groups)[0];
+			return { groups, active: state.activeCollection };
+		}
+
+		function saveCollectionsState() {
+			collectionsState.active = state.activeCollection;
+			localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify(collectionsState));
+		}
+
+		function renderCollectionsUI() {
+			const select = document.getElementById('collection-select');
+			const names = Object.keys(collectionsState.groups);
+			select.innerHTML = names.map(name => {
+				const selected = name === state.activeCollection ? ' selected' : '';
+				return `<option value="${escapeHtml(name)}"${selected}>${escapeHtml(name)}</option>`;
+			}).join('');
+			updateFavoriteToggleLabel();
+		}
+
+		function updateFavoriteToggleLabel() {
+			const btn = document.getElementById('show-fav');
+			btn.textContent = state.onlyFavorites ? `查看全部结果` : `仅看${state.activeCollection}`;
+		}
+
+		async function init() {
+			renderCollectionsUI();
+			await Promise.all([loadCategories(), loadDynastyStats()]);
+			bindAuthorSuggest();
+		}
+
+		async function loadData() {
+			const loadingEl = document.getElementById('loading');
+			if (loadingEl) loadingEl.classList.add('active');
+
+			const q = document.getElementById('q').value.trim();
+			const author = document.getElementById('author').value.trim();
+			const dynasty = document.getElementById('dynasty').value;
+			const category = document.getElementById('category').value;
+
+			const params = new URLSearchParams({
+				q,
+				author,
+				dynasty,
+				category,
+				page: String(state.page),
+				page_size: String(state.pageSize)
+			});
+
+			try {
+				const resp = await fetch(`/api/search?${params.toString()}`);
+				const data = await resp.json();
+
+				if (!resp.ok) {
+					document.getElementById('summary').textContent = data.error || '查询失败';
+					document.getElementById('results').innerHTML = '';
+					return;
+				}
+
+				state.total = data.total;
+				render(data.items, q);
+				const favCount = Object.keys(currentFavorites()).length;
+				const totalPages = Math.max(1, Math.ceil(data.total / state.pageSize));
+				document.getElementById('summary').textContent = `共 ${data.total} 条，当前第 ${data.page} 页，${state.activeCollection} ${favCount} 条`;
+				document.getElementById('page-info').textContent = `第 ${data.page} 页 / 共 ${totalPages} 页`;
+			} catch (err) {
+				console.error(err);
+				document.getElementById('summary').textContent = '网络错误，请稍后再试';
+			} finally {
+				if (loadingEl) loadingEl.classList.remove('active');
+			}
+		}
+
+		function render(items, q) {
+			const root = document.getElementById('results');
+			const favs = currentFavorites();
+			const source = state.onlyFavorites ? items.filter(x => favs[x.id]) : items;
+
+			if (state.onlyFavorites && !source.length) {
+				root.innerHTML = '<p class="empty">本页没有收藏结果，切回“全部结果”可继续浏览。</p>';
+				return;
+			}
+			if (!items.length) {
+				root.innerHTML = '<p class="empty">没有找到匹配结果。</p>';
+				return;
+			}
+
+			root.innerHTML = source.map(item => {
+				const paragraphs = formatParagraphs(item.paragraphs, item.category);
+				const appreciationShort = item.appreciation_short || item.appreciation || '';
+				const appreciationShortBlock = appreciationShort ? `<div class="appreciation"><strong>赏析（简）：</strong>${highlight(escapeHtml(appreciationShort), q)}</div>` : '';
+				const appreciationDetailedBlock = item.appreciation_detailed ? `<div class="appreciation detailed"><strong>赏析（详）：</strong>${highlight(escapeHtml(item.appreciation_detailed), q)}</div>` : '';
+				const translationBlock = item.translation_baihua ? `<div class="translation"><strong>白话：</strong>${highlight(escapeHtml(item.translation_baihua), q)}</div>` : '';
+				return `
+				<article class="card">
+					<h3>${highlight(escapeHtml(item.title), q)}</h3>
+					<div class="meta">${escapeHtml(item.dynasty)} · ${escapeHtml(item.author)} · ${escapeHtml(item.category)}</div>
+					<pre>${highlight(escapeHtml(paragraphs), q)}</pre>
+					${appreciationShortBlock}
+					${appreciationDetailedBlock}
+					${translationBlock}
+					<div class="card-actions">
+						<button type="button" class="fav-btn" data-id="${item.id}" data-dynasty="${escapeHtml(item.dynasty)}" data-author="${escapeHtml(item.author)}" data-title="${escapeHtml(item.title)}" data-category="${escapeHtml(item.category)}" data-paragraphs="${escapeHtml(paragraphs)}">
+							${favs[item.id] ? '取消收藏' : '收藏'}
+						</button>
+						<button type="button" class="edit-trans-btn" data-id="${item.id}" data-translation="${escapeHtml(item.translation_baihua || '')}">编辑翻译</button>
+					</div>
+				</article>
+			`;
+			}).join('');
+
+			root.querySelectorAll('.fav-btn').forEach(btn => {
+				btn.addEventListener('click', () => toggleFavorite(btn));
+			});
+			root.querySelectorAll('.edit-trans-btn').forEach(btn => {
+				btn.addEventListener('click', () => openTransModal(btn));
+			});
+		}
+
+		let currentEditId = null;
+
+		function openTransModal(btn) {
+			currentEditId = Number(btn.dataset.id);
+			const transInput = document.getElementById('trans-input');
+			let currentTrans = btn.dataset.translation || '';
+			if (currentTrans.startsWith('白话：')) {
+				currentTrans = currentTrans.substring(3);
+			}
+			transInput.value = currentTrans;
+			document.getElementById('trans-modal').style.display = 'block';
+		}
+
+		document.getElementById('trans-cancel').addEventListener('click', () => {
+			document.getElementById('trans-modal').style.display = 'none';
+			currentEditId = null;
+		});
+
+		document.getElementById('trans-save').addEventListener('click', async () => {
+			if (!currentEditId) return;
+			const newTrans = document.getElementById('trans-input').value.trim();
+			
+			const saveBtn = document.getElementById('trans-save');
+			saveBtn.disabled = true;
+			saveBtn.textContent = '保存中...';
+
+			try {
+				const resp = await fetch('/api/translation', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ id: currentEditId, translation: newTrans ? '白话：' + newTrans : '' })
+				});
+				const data = await resp.json();
+				if (!resp.ok) {
+					alert(data.error || '保存失败');
+				} else {
+					alert('保存成功！');
+					document.getElementById('trans-modal').style.display = 'none';
+					await loadData();
+				}
+			} catch (err) {
+				alert('网络异常，保存失败');
+			} finally {
+				saveBtn.disabled = false;
+				saveBtn.textContent = '保存并提交';
+			}
+		});
+
+		function pickCollectionName() {
+			const names = Object.keys(collectionsState.groups);
+			if (!names.length) {
+				collectionsState.groups['默认收藏夹'] = {};
+				return '默认收藏夹';
+			}
+
+			const defaultIndex = Math.max(1, names.indexOf(state.activeCollection) + 1);
+			const list = names
+				.map((name, i) => `${i + 1}. ${name}${name === state.activeCollection ? '（当前）' : ''}`)
+				.join('\n');
+			const input = prompt(
+				`选择收藏夹（输入序号或名称）\n${list}\n\n可输入新名称直接创建收藏夹`,
+				String(defaultIndex)
+			);
+			if (input === null) return null;
+
+			const value = input.trim();
+			if (!value) return state.activeCollection;
+
+			if (/^\d+$/.test(value)) {
+				const idx = Number(value) - 1;
+				if (idx >= 0 && idx < names.length) return names[idx];
+				alert('序号无效，请重新选择');
+				return null;
+			}
+
+			if (collectionsState.groups[value]) return value;
+
+			if (!confirm(`收藏夹“${value}”不存在，是否创建并收藏到该收藏夹？`)) {
+				return null;
+			}
+			createCollection(value);
+			return value;
+		}
+
+		function toggleFavorite(btn) {
+			const selectedCollection = pickCollectionName();
+			if (!selectedCollection) return;
+
+			const favs = collectionsState.groups[selectedCollection] || {};
+			collectionsState.groups[selectedCollection] = favs;
+			const id = Number(btn.dataset.id);
+			let msg = '';
+			if (favs[id]) {
+				delete favs[id];
+				msg = `已从“${selectedCollection}”移除`;
+			} else {
+				favs[id] = {
+					id,
+					dynasty: btn.dataset.dynasty,
+					author: btn.dataset.author,
+					title: btn.dataset.title,
+					category: btn.dataset.category,
+					paragraphs: btn.dataset.paragraphs
+				};
+				msg = `已收藏到“${selectedCollection}”`;
+			}
+
+			state.activeCollection = selectedCollection;
+			renderCollectionsUI();
+			saveCollectionsState();
+			loadData();
+			alert(msg);
+		}
+
+		function escapeHtml(value) {
+			return String(value)
+				.replaceAll('&', '&amp;')
+				.replaceAll('<', '&lt;')
+				.replaceAll('>', '&gt;')
+				.replaceAll('"', '&quot;')
+				.replaceAll("'", '&#39;');
+		}
+
+		function escapeRegExp(value) {
+			return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		}
+
+		function highlight(text, q) {
+			if (!q) return text;
+			const pattern = new RegExp(escapeRegExp(q), 'gi');
+			return text.replace(pattern, m => `<mark>${m}</mark>`);
+		}
+
+		function formatParagraphs(text, category) {
+			if (state.showPinyin) return text;
+			if (category !== '黄帝内经') return text;
+			const s = String(text);
+			return s
+				.replace(/（[A-Za-z\u00C0-\u024F\s]+）/g, '')
+				.replace(/\([A-Za-z\u00C0-\u024F\s]+\)/g, '')
+				.replace(/\n{3,}/g, '\n\n')
+				.trim();
+		}
+
+		function createCollection(name) {
+			const trimmed = (name || '').trim();
+			if (!trimmed) return;
+			if (collectionsState.groups[trimmed]) {
+				alert('收藏夹名称已存在');
+				return;
+			}
+			collectionsState.groups[trimmed] = {};
+			state.activeCollection = trimmed;
+			saveCollectionsState();
+			renderCollectionsUI();
+		}
+
+		async function suggestAuthors(keyword) {
+			const resp = await fetch(`/api/authors?q=${encodeURIComponent(keyword)}&limit=10`);
+			const data = await resp.json();
+			if (!resp.ok) return;
+			document.getElementById('author-list').innerHTML = data.items
+				.map(item => `<option value="${escapeHtml(item.author)}"></option>`)
+				.join('');
+		}
+
+		function bindAuthorSuggest() {
+			const authorInput = document.getElementById('author');
+			let timer = null;
+			authorInput.addEventListener('input', () => {
+				clearTimeout(timer);
+				timer = setTimeout(() => suggestAuthors(authorInput.value.trim()), 220);
+			});
+		}
+
+		async function loadCategories() {
+			const resp = await fetch('/api/categories');
+			const data = await resp.json();
+			if (!resp.ok) return;
+			document.getElementById('category').innerHTML = '<option value="">全部分类</option>' + data.items
+				.map(item => `<option value="${escapeHtml(item.category)}">${escapeHtml(item.category)} (${item.cnt})</option>`)
+				.join('');
+		}
+
+		async function loadDynastyStats() {
+			const resp = await fetch('/api/stats/dynasty');
+			const data = await resp.json();
+			if (!resp.ok) return;
+			const total = data.items.reduce((acc, x) => acc + x.cnt, 0) || 1;
+			document.getElementById('stats').innerHTML = data.items.slice(0, 8).map(item => {
+				const pct = Math.round((item.cnt / total) * 1000) / 10;
+				return `
+					<div class="stat-row">
+						<span class="label">${escapeHtml(item.dynasty)}</span>
+						<div class="bar"><i style="width:${pct}%"></i></div>
+						<span class="num">${item.cnt}</span>
+					</div>
+				`;
+			}).join('');
+		}
+
+		function exportMarkdown() {
+			const rows = Object.values(currentFavorites());
+			if (!rows.length) return alert('暂无收藏可导出');
+			const md = rows.map(x => `## ${x.title}\n\n${x.dynasty} · ${x.author} · ${x.category}\n\n${x.paragraphs}\n`).join('\n');
+			downloadText(`poetry_${state.activeCollection}_${Date.now()}.md`, md, 'text/markdown;charset=utf-8');
+		}
+
+		function exportCsv() {
+			const rows = Object.values(currentFavorites());
+			if (!rows.length) return alert('暂无收藏可导出');
+			const header = 'id,dynasty,author,title,category,paragraphs';
+			const body = rows.map(x => [x.id, x.dynasty, x.author, x.title, x.category, x.paragraphs].map(csvCell).join(',')).join('\n');
+			downloadText(`poetry_${state.activeCollection}_${Date.now()}.csv`, `${header}\n${body}`, 'text/csv;charset=utf-8');
+		}
+
+		async function shareCollection() {
+			const rows = Object.values(currentFavorites());
+			if (!rows.length) {
+				alert('当前收藏夹为空，无法分享');
+				return;
+			}
+
+			let shareUrl = '';
+			let expiresAt = '';
+			try {
+				const resp = await fetch('/api/share-collection', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						name: state.activeCollection,
+						items: rows
+					})
+				});
+				const data = await resp.json();
+				if (!resp.ok) {
+					alert(data.error || '生成分享链接失败');
+					return;
+				}
+				shareUrl = data.url || '';
+				expiresAt = data.expires_at || '';
+			} catch {
+				alert('网络异常，生成分享链接失败');
+				return;
+			}
+
+			const text = [
+				`古诗词收藏夹：${state.activeCollection}`,
+				`共 ${rows.length} 条`,
+				`分享链接：${shareUrl}`,
+				expiresAt ? `链接有效期至：${expiresAt}` : '',
+				'',
+				...rows.map((x, i) => `${i + 1}. ${x.title}（${x.dynasty}·${x.author}）\n${x.paragraphs}`)
+			].filter(Boolean).join('\n\n');
+
+			if (navigator.share) {
+				try {
+					await navigator.share({
+						title: `古诗词收藏夹：${state.activeCollection}`,
+						text,
+						url: shareUrl
+					});
+					return;
+				} catch {
+					// Fallback to clipboard below.
+				}
+			}
+
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				await navigator.clipboard.writeText(text);
+				alert(`分享链接和收藏内容已复制，可直接发给朋友\n${shareUrl}${expiresAt ? `\n有效至：${expiresAt}` : ''}`);
+				return;
+			}
+
+			downloadText(`poetry_share_${state.activeCollection}_${Date.now()}.txt`, text, 'text/plain;charset=utf-8');
+			alert('已生成分享文本文件，可转发给朋友');
+		}
+
+		function csvCell(v) {
+			return `"${String(v ?? '').replaceAll('"', '""')}"`;
+		}
+
+		function downloadText(filename, text, mime) {
+			const blob = new Blob([text], { type: mime });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			a.click();
+			URL.revokeObjectURL(url);
+		}
+
+		async function applyCategoryFilter(category) {
+			document.getElementById('category').value = category;
+			state.page = 1;
+			await loadData();
+		}
+
+		document.getElementById('search-form').addEventListener('submit', async (e) => {
+			e.preventDefault();
+			state.page = 1;
+			await loadData();
+		});
+
+		document.getElementById('quick-daodejing').addEventListener('click', async () => {
+			await applyCategoryFilter('道德经');
+		});
+
+		document.getElementById('quick-yijing').addEventListener('click', async () => {
+			await applyCategoryFilter('易经');
+		});
+
+		document.getElementById('quick-hongloumeng').addEventListener('click', async () => {
+			await applyCategoryFilter('红楼梦');
+		});
+
+		document.getElementById('quick-neijing').addEventListener('click', async () => {
+			await applyCategoryFilter('黄帝内经');
+		});
+
+		document.getElementById('quick-siku').addEventListener('click', async () => {
+			await applyCategoryFilter('四库全书');
+		});
+
+		document.querySelectorAll('.entry-card').forEach(card => {
+			card.addEventListener('click', async () => {
+				await applyCategoryFilter(card.dataset.category || '');
+			});
+		});
+
+		document.getElementById('quick-reset').addEventListener('click', async () => {
+			document.getElementById('q').value = '';
+			document.getElementById('author').value = '';
+			document.getElementById('dynasty').value = '';
+			document.getElementById('category').value = '';
+			state.page = 1;
+			await loadData();
+		});
+
+		document.getElementById('show-fav').addEventListener('click', async (e) => {
+			state.onlyFavorites = !state.onlyFavorites;
+			updateFavoriteToggleLabel();
+			await loadData();
+		});
+
+		document.getElementById('toggle-pinyin').addEventListener('change', async (e) => {
+			state.showPinyin = Boolean(e.target.checked);
+			await loadData();
+		});
+
+		document.getElementById('export-md').addEventListener('click', exportMarkdown);
+		document.getElementById('export-csv').addEventListener('click', exportCsv);
+		document.getElementById('share-collection').addEventListener('click', shareCollection);
+
+		document.getElementById('collection-select').addEventListener('change', async (e) => {
+			state.activeCollection = e.target.value;
+			saveCollectionsState();
+			updateFavoriteToggleLabel();
+			await loadData();
+		});
+
+		document.getElementById('create-collection').addEventListener('click', async () => {
+			const input = document.getElementById('new-collection-name');
+			createCollection(input.value);
+			input.value = '';
+			await loadData();
+		});
+
+		document.getElementById('new-collection-name').addEventListener('keydown', async (e) => {
+			if (e.key !== 'Enter') return;
+			e.preventDefault();
+			document.getElementById('create-collection').click();
+		});
+
+		document.getElementById('prev').addEventListener('click', async () => {
+			if (state.page > 1) {
+				state.page -= 1;
+				await loadData();
+			}
+		});
+
+		document.getElementById('next').addEventListener('click', async () => {
+			const maxPage = Math.ceil(state.total / state.pageSize) || 1;
+			if (state.page < maxPage) {
+				state.page += 1;
+				await loadData();
+			}
+		});
+
+		document.getElementById('jump-btn').addEventListener('click', async () => {
+			const input = document.getElementById('jump-page');
+			const maxPage = Math.ceil(state.total / state.pageSize) || 1;
+			const target = Number.parseInt(input.value || '', 10);
+			if (!Number.isFinite(target)) return;
+			const page = Math.min(Math.max(target, 1), maxPage);
+			if (page === state.page) return;
+			state.page = page;
+			await loadData();
+		});
+
+		document.getElementById('jump-page').addEventListener('keydown', async (e) => {
+			if (e.key !== 'Enter') return;
+			e.preventDefault();
+			document.getElementById('jump-btn').click();
+		});
+
+		init();
+	</script>
+</body>
+</html>

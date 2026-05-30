@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>{{ collection_name }} - 诗词分享</title>
+	<meta name="description" content="{{ description_text }}" />
+	<meta property="og:title" content="{{ collection_name }} - 诗词分享" />
+	<meta property="og:description" content="{{ description_text }}" />
+	<style>
+		:root {
+			--bg: #f5f2e8;
+			--panel: #fffdf8;
+			--ink: #1f1f1f;
+			--muted: #6c6558;
+			--line: #dfd5c5;
+		}
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			font-family: "Noto Serif SC", "Source Han Serif SC", serif;
+			background: var(--bg);
+			color: var(--ink);
+		}
+		.main {
+			max-width: 900px;
+			margin: 0 auto;
+			padding: 22px;
+		}
+		.panel {
+			background: var(--panel);
+			border: 1px solid var(--line);
+			border-radius: 12px;
+			padding: 16px;
+		}
+		h1 {
+			margin: 0;
+			font-size: 28px;
+		}
+		.meta {
+			margin-top: 8px;
+			color: var(--muted);
+		}
+		.share-tools {
+			display: flex;
+			gap: 10px;
+			flex-wrap: wrap;
+			margin-top: 14px;
+		}
+		.share-tools button,
+		.share-tools a {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			height: 38px;
+			padding: 0 14px;
+			border-radius: 10px;
+			border: 0;
+			background: #5f4630;
+			color: #fff;
+			text-decoration: none;
+			cursor: pointer;
+		}
+		.share-hint {
+			margin-top: 12px;
+			padding: 10px 12px;
+			border-left: 3px solid #8d6338;
+			background: #fff6e8;
+			color: #654b2b;
+			line-height: 1.7;
+		}
+		.qr-box {
+			margin-top: 14px;
+			display: flex;
+			align-items: center;
+			gap: 16px;
+			padding: 14px;
+			border: 1px solid var(--line);
+			border-radius: 12px;
+			background: #fff;
+		}
+		.qr-box img {
+			width: 132px;
+			height: 132px;
+			border-radius: 8px;
+			border: 1px solid var(--line);
+			background: #fff;
+		}
+		.qr-note {
+			color: var(--muted);
+			line-height: 1.7;
+		}
+		.card {
+			margin-top: 12px;
+			padding: 12px;
+			border: 1px dashed var(--line);
+			border-radius: 10px;
+			background: #fff;
+		}
+		.card h3 {
+			margin: 0;
+		}
+		.pre {
+			margin-top: 8px;
+			white-space: pre-wrap;
+			line-height: 1.8;
+		}
+		.empty {
+			color: var(--muted);
+			margin-top: 14px;
+		}
+		.poster-canvas {
+			display: none;
+		}
+		@media (max-width: 720px) {
+			.qr-box {
+				flex-direction: column;
+				align-items: flex-start;
+			}
+		}
+	</style>
+</head>
+<body>
+	<main class="main">
+		<section
+			class="panel"
+			id="share-panel"
+			data-share-url="{{ share_url }}"
+			data-collection-name="{{ collection_name }}"
+			data-item-count="{{ items|length }}"
+			data-preview-titles='{{ preview_titles | tojson | safe }}'
+			data-qr-src="{{ qr_src }}"
+		>
+			<h1>{{ collection_name }}</h1>
+			<div class="meta">分享收藏夹 · 共 {{ items|length }} 条 · 生成时间 {{ created_at }} · 有效至 {{ expires_at }}</div>
+			<div class="share-tools">
+				<button type="button" id="copy-link">复制链接</button>
+				<button type="button" id="save-poster">生成朋友圈海报</button>
+				<a href="{{ share_url }}" target="_blank" rel="noopener">新窗口打开</a>
+			</div>
+			<div class="share-hint" id="wechat-hint">可直接把链接发到微信；如果是在微信内打开本页，可点右上角菜单分享到朋友圈。也可以生成海报后保存到手机相册再发朋友圈。</div>
+			<div class="qr-box">
+				<img id="share-qr" src="{{ qr_src }}" alt="分享二维码" />
+				<div class="qr-note">
+					<div><strong>手机微信扫码</strong></div>
+					<div>扫码后可直接打开这个收藏夹分享页。</div>
+					<div>链接：{{ share_url }}</div>
+				</div>
+			</div>
+			{% if items %}
+				{% for item in items %}
+				<article class="card">
+					<h3>{{ item.title }}</h3>
+					<div class="meta">{{ item.dynasty }} · {{ item.author }} · {{ item.category }}</div>
+					<div class="pre">{{ item.paragraphs }}</div>
+				</article>
+				{% endfor %}
+			{% else %}
+				<p class="empty">该分享暂无内容。</p>
+			{% endif %}
+			<canvas id="poster-canvas" class="poster-canvas" width="900" height="1400"></canvas>
+		</section>
+	</main>
+	<script>
+		const panel = document.getElementById('share-panel');
+		const shareUrl = panel.dataset.shareUrl || '';
+		const collectionName = panel.dataset.collectionName || '';
+		const itemCount = Number(panel.dataset.itemCount || '0');
+		const previewTitles = JSON.parse(panel.dataset.previewTitles || '[]');
+		const qrSrc = panel.dataset.qrSrc || '';
+
+		function isWeChat() {
+			return /MicroMessenger/i.test(navigator.userAgent || '');
+		}
+
+		async function copyLink() {
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				await navigator.clipboard.writeText(shareUrl);
+				alert('链接已复制，直接发到微信即可');
+				return;
+			}
+			window.prompt('复制下面链接发到微信', shareUrl);
+		}
+
+		function loadImage(src) {
+			return new Promise((resolve, reject) => {
+				const img = new Image();
+				img.onload = () => resolve(img);
+				img.onerror = reject;
+				img.src = src;
+			});
+		}
+
+		async function savePoster() {
+			const canvas = document.getElementById('poster-canvas');
+			const ctx = canvas.getContext('2d');
+			ctx.fillStyle = '#f5f2e8';
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+			ctx.fillStyle = '#fffdf8';
+			ctx.fillRect(48, 48, canvas.width - 96, canvas.height - 96);
+
+			ctx.fillStyle = '#1f1f1f';
+			ctx.font = 'bold 42px "Noto Serif SC", serif';
+			ctx.fillText(collectionName, 90, 128);
+
+			ctx.fillStyle = '#6c6558';
+			ctx.font = '24px "Noto Serif SC", serif';
+			ctx.fillText(`古诗词收藏夹 · 共 ${itemCount} 条`, 90, 176);
+			ctx.fillText('微信扫码打开，或把此海报发到朋友圈', 90, 214);
+
+			ctx.fillStyle = '#5f4630';
+			ctx.font = 'bold 28px "Noto Serif SC", serif';
+			ctx.fillText('精选内容', 90, 286);
+
+			ctx.fillStyle = '#2a2a2a';
+			ctx.font = '26px "Noto Serif SC", serif';
+			previewTitles.forEach((title, idx) => {
+				ctx.fillText(`${idx + 1}. ${title}`, 110, 340 + idx * 56);
+			});
+
+			const qrImg = await loadImage(qrSrc);
+			ctx.drawImage(qrImg, 590, 980, 200, 200);
+			ctx.fillStyle = '#6c6558';
+			ctx.font = '20px "Noto Serif SC", serif';
+			ctx.fillText('扫码查看完整收藏夹', 580, 1210);
+
+			ctx.fillStyle = '#7a6f61';
+			ctx.font = '18px sans-serif';
+			ctx.fillText(shareUrl, 90, 1290);
+
+			const link = document.createElement('a');
+			link.download = `wechat_share_${Date.now()}.png`;
+			link.href = canvas.toDataURL('image/png');
+			link.click();
+		}
+
+		document.getElementById('copy-link').addEventListener('click', copyLink);
+		document.getElementById('save-poster').addEventListener('click', () => {
+			savePoster().catch(() => alert('海报生成失败，请稍后再试'));
+		});
+
+		if (isWeChat()) {
+			document.getElementById('wechat-hint').textContent = '你正在微信里打开本页，可点右上角菜单分享到朋友圈；也可以先生成海报保存到相册后再发朋友圈。';
+		}
+	</script>
+</body>
+</html>
