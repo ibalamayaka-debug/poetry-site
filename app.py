@@ -59,16 +59,22 @@ for raw_name, display_name in RAW_CATEGORY_ALIASES.items():
 	DISPLAY_TO_RAW_CATEGORIES.setdefault(display_name, set()).add(raw_name)
 
 
+def dict_factory(cursor, row):
+	d = {}
+	for idx, col in enumerate(cursor.description):
+		d[col[0]] = row[idx]
+	return d
+
 def get_conn():
 	url = os.environ.get("TURSO_DATABASE_URL")
 	token = os.environ.get("TURSO_AUTH_TOKEN")
 	if url and token and libsql:
-		# libsql doesn't need row_factory, it returns dict-like objects by default or tuples depending on the execute method
 		conn = libsql.connect(url, auth_token=token)
+		conn.row_factory = dict_factory
 		return conn
 
 	conn = sqlite3.connect(DB_PATH)
-	conn.row_factory = sqlite3.Row
+	conn.row_factory = dict_factory
 	return conn
 
 
