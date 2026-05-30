@@ -63,8 +63,8 @@ def get_conn():
 	url = os.environ.get("TURSO_DATABASE_URL")
 	token = os.environ.get("TURSO_AUTH_TOKEN")
 	if url and token and libsql:
+		# libsql doesn't need row_factory, it returns dict-like objects by default or tuples depending on the execute method
 		conn = libsql.connect(url, auth_token=token)
-		conn.row_factory = libsql.Row
 		return conn
 
 	conn = sqlite3.connect(DB_PATH)
