@@ -60,16 +60,26 @@ for raw_name, display_name in RAW_CATEGORY_ALIASES.items():
 
 
 def get_conn():
+	""" 优化版：优先使用 Turso，失败自动回退本地数据库 """
 	url = os.environ.get("TURSO_DATABASE_URL")
 	token = os.environ.get("TURSO_AUTH_TOKEN")
+	
 	if url and token and libsql:
-		conn = libsql.connect(url, auth_token=token)
-		# libsql builtins.Connection doesn't have row_factory. We will map rows manually using dict_factory below.
+		try:
+			conn = libsql.connect(url, auth_token=token)
+			print("[INFO] 使用 Turso 云数据库")
+			return conn
+		except Exception as e:
+			print(f"[WARN] Turso 连接失败: {e}，回退本地数据库")
+	
+	# 回退本地
+	if DB_PATH.exists():
+		conn = sqlite3.connect(DB_PATH)
+		conn.row_factory = sqlite3.Row
+		print("[INFO] 使用本地数据库")
 		return conn
-
-	conn = sqlite3.connect(DB_PATH)
-	conn.row_factory = sqlite3.Row
-	return conn
+	else:
+		raise RuntimeError("本地数据库也不存在，请检查部署")
 
 def execute_query(query, params=()):
 	conn = get_conn()
@@ -281,18 +291,18 @@ def punctuate_siku_text(text: str) -> str:
 
 
 def is_nalan_author(author: str) -> bool:
-	a = to_simplified(str(author or "")).replace(" ", "")
+	a = to_simplified(str(author or "").replace(" ", ""))
 	return "纳兰性德" in a or "纳兰容若" in a
 
 
 def is_liqingzhao_author(author: str) -> bool:
-	a = to_simplified(str(author or "")).replace(" ", "")
+	a = to_simplified(str(author or "").replace(" ", ""))
 	return "李清照" in a
 
 
 def build_liqingzhao_appreciation_short(title: str, paragraphs: str) -> str:
-	t = to_simplified(str(title or "")).strip()
-	p = to_simplified(str(paragraphs or "")).strip()
+	t = to_simplified(str(title or "").strip())
+	p = to_simplified(str(paragraphs or "").strip())
 	tag = "婉约"
 	if any(k in p for k in ["酒", "醉", "黄昏"]):
 		tag = "幽婉"
@@ -317,8 +327,8 @@ def build_liqingzhao_appreciation_short(title: str, paragraphs: str) -> str:
 
 
 def build_liqingzhao_appreciation_detailed(title: str, paragraphs: str) -> str:
-	t = to_simplified(str(title or "")).strip()
-	p = to_simplified(str(paragraphs or "")).strip()
+	t = to_simplified(str(title or "").strip())
+	p = to_simplified(str(paragraphs or "").strip())
 
 	part1 = "词中常先写可见之景，再落入不可见之情，形成由外而内的心理推进。"
 	part2 = "意象选择多为花、月、风、雨、雁、梧桐等，借景不在铺陈，而在托情。"
@@ -349,8 +359,8 @@ LIQINGZHAO_BAIHUA_BY_INICIPIT = {
 
 
 def build_liqingzhao_translation(title: str, paragraphs: str) -> str:
-	_ = to_simplified(str(title or "")).strip()
-	p = to_simplified(str(paragraphs or "")).strip()
+	_ = to_simplified(str(title or "").strip())
+	p = to_simplified(str(paragraphs or "").strip())
 	lines = [x.strip() for x in re.split(r"[\n。！？；]", p) if x.strip()]
 	if not lines:
 		return ""
@@ -677,7 +687,7 @@ def search_poetry():
 		match_parts = ["poems_fts MATCH ?" for _ in q_variants]
 		fts_clause = "poems.id IN (SELECT rowid FROM poems_fts WHERE " + " OR ".join(match_parts) + ")"
 
-		like_parts = []
+	like_parts = []
 		for _ in q_variants:
 			like_parts.append("poems.title LIKE ?")
 			like_parts.append("poems.paragraphs LIKE ?")
