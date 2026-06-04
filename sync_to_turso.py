@@ -6,7 +6,9 @@ import time
 
 # ==================== 配置 ====================
 current_dir = os.path.dirname(os.path.abspath(__file__))
-LOCAL_DB = os.path.join(current_dir, "poetry.db")
+
+# 支持通过环境变量指定本地数据库路径（用户可以设置 LOCAL_POETRY_DB）
+LOCAL_DB = os.environ.get("LOCAL_POETRY_DB") or os.path.join(current_dir, "poetry.db")
 
 TURSO_URL = os.environ.get("TURSO_DATABASE_URL") or "libsql://my-poetry-db-ymxl97.aws-ap-south-1.turso.io"
 TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
@@ -21,11 +23,25 @@ if not TURSO_TOKEN:
 
 def sync():
     print("🚀 开始同步本地 → Turso")
+    print(f"📁 本地数据库路径: {LOCAL_DB}")
 
     # 连接本地
+    if not os.path.exists(LOCAL_DB):
+        print(f"❌ 错误: 本地数据库不存在: {LOCAL_DB}")
+        print("请确认路径正确，或先将 poetry.db 放到正确位置")
+        return
+
     local_conn = sqlite3.connect(LOCAL_DB)
     local_conn.row_factory = sqlite3.Row
     local_cur = local_conn.cursor()
+
+    # 检查表是否存在
+    local_cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='poems'")
+    if not local_cur.fetchone():
+        print("❌ 错误: 本地数据库中没有 poems 表")
+        print("请先运行导入脚本创建表和导入数据，或检查数据库文件是否正确")
+        local_conn.close()
+        return
 
     # 连接云端
     print("正在连接 Turso 云数据库...")
@@ -40,9 +56,10 @@ def sync():
             time.sleep(2)
     else:
         print("❌ 无法连接 Turso")
+        local_conn.close()
         return
 
-    # 建表
+    # 建表（云端）
     remote_cur.execute("""
         CREATE TABLE IF NOT EXISTS poems (
             id INTEGER PRIMARY KEY,
