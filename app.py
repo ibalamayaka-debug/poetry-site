@@ -44,6 +44,12 @@ def db_available() -> bool:
 
 app = Flask(__name__)
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    if hasattr(e, 'code'):
+        return jsonify({'error': str(e)}), e.code
+    return jsonify({'error': 'Server Error: ' + str(e)}), 500
+
 S2T = OpenCC("s2t") if OpenCC else None
 T2S = OpenCC("t2s") if OpenCC else None
 
