@@ -63,11 +63,18 @@ def sync():
     remote_cur.execute("""
         CREATE TABLE IF NOT EXISTS poems (
             id INTEGER PRIMARY KEY,
-            dynasty TEXT, author TEXT, title TEXT, paragraphs TEXT,
-            category TEXT, source_file TEXT, raw_json TEXT,
-            translation_baihua TEXT, appreciation TEXT
+            dynasty TEXT NOT NULL,
+            author TEXT NOT NULL,
+            title TEXT NOT NULL,
+            paragraphs TEXT NOT NULL,
+            category TEXT NOT NULL,
+            translation_baihua TEXT,
+            appreciation TEXT
         )
     """)
+    remote_cur.execute("CREATE INDEX IF NOT EXISTS idx_poems_author ON poems(author)")
+    remote_cur.execute("CREATE INDEX IF NOT EXISTS idx_poems_dynasty ON poems(dynasty)")
+    remote_cur.execute("CREATE INDEX IF NOT EXISTS idx_poems_category ON poems(category)")
     remote_conn.commit()
 
     # 获取本地最大 id 和云端最大 id（实现增量同步）
@@ -94,7 +101,8 @@ def sync():
 
     while True:
         local_cur.execute(f"""
-            SELECT * FROM poems 
+            SELECT id, dynasty, author, title, paragraphs, category, translation_baihua, appreciation
+            FROM poems
             WHERE id > ? 
             LIMIT {BATCH_SIZE} OFFSET {offset}
         """, (remote_max,))
@@ -107,7 +115,15 @@ def sync():
         placeholders = ",".join(["?" for _ in range(len(rows[0]))])
 
         try:
-            remote_cur.executemany(f"INSERT OR REPLACE INTO poems VALUES ({placeholders})", data)
+            remote_cur.executemany(
+                f"""
+                INSERT OR REPLACE INTO poems(
+                    id, dynasty, author, title, paragraphs, category, translation_baihua, appreciation
+                )
+                VALUES ({placeholders})
+                """,
+                data,
+            )
             remote_conn.commit()
             
             synced += len(rows)
