@@ -94,6 +94,14 @@ def rows_to_dicts(rows, cursor=None):
 	return [row_to_dict(row, cursor) for row in rows]
 
 
+def table_exists(cursor, table_name: str) -> bool:
+	row = cursor.execute(
+		"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+		(table_name,),
+	).fetchone()
+	return row is not None
+
+
 def execute_query(query, params=()):
 	conn = get_conn()
 	cur = conn.cursor()
@@ -675,19 +683,26 @@ def search_poetry():
 
 	where_parts = []
 	params: list[object] = []
+	conn = get_conn()
+	cur = conn.cursor()
+	has_fts = table_exists(cur, "poems_fts")
 
 	if q:
 		q_variants = [v.replace('"', "") for v in text_variants(q)]
-		match_parts = ["poems_fts MATCH ?" for _ in q_variants]
-		fts_clause = "poems.id IN (SELECT rowid FROM poems_fts WHERE " + " OR ".join(match_parts) + ")"
-
 		like_parts = []
 		for _ in q_variants:
 			like_parts.append("poems.title LIKE ?")
 			like_parts.append("poems.paragraphs LIKE ?")
 
-		where_parts.append("(" + fts_clause + " OR " + " OR ".join(like_parts) + ")")
-		params.extend([f'"{v}"' for v in q_variants])
+		search_parts = []
+		if has_fts:
+			match_parts = ["poems_fts MATCH ?" for _ in q_variants]
+			fts_clause = "poems.id IN (SELECT rowid FROM poems_fts WHERE " + " OR ".join(match_parts) + ")"
+			search_parts.append(fts_clause)
+			params.extend([f'"{v}"' for v in q_variants])
+
+		search_parts.extend(like_parts)
+		where_parts.append("(" + " OR ".join(search_parts) + ")")
 		for v in q_variants:
 			params.append(f"%{v}%")
 			params.append(f"%{v}%")
@@ -698,9 +713,14 @@ def search_poetry():
 		params.extend(dynasty_variants)
 	if author:
 		author_variants = [v.replace('"', "") for v in text_variants(author)]
-		author_parts = ["poems_fts MATCH ?" for _ in author_variants]
-		where_parts.append("poems.id IN (SELECT rowid FROM poems_fts WHERE " + " OR ".join(author_parts) + ")")
-		params.extend([f"author:{v}" for v in author_variants])
+		if has_fts:
+			author_parts = ["poems_fts MATCH ?" for _ in author_variants]
+			where_parts.append("poems.id IN (SELECT rowid FROM poems_fts WHERE " + " OR ".join(author_parts) + ")")
+			params.extend([f"author:{v}" for v in author_variants])
+		else:
+			author_parts = ["poems.author LIKE ?" for _ in author_variants]
+			where_parts.append("(" + " OR ".join(author_parts) + ")")
+			params.extend([f"%{v}%" for v in author_variants])
 	if category:
 		category_variants = category_variants_for_filter(category)
 		placeholders = ",".join(["?" for _ in category_variants])
@@ -710,9 +730,6 @@ def search_poetry():
 	where_sql = ""
 	if where_parts:
 		where_sql = "WHERE " + " AND ".join(where_parts)
-
-	conn = get_conn()
-	cur = conn.cursor()
 
 	if dedupe:
 		count_sql = f"""
