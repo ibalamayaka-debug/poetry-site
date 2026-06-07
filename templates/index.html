@@ -190,22 +190,32 @@
 		}
 
 		async function init() {
-			renderCollectionsUI();
-			await Promise.all([loadCategories(), loadDynastyStats()]);
-			bindAuthorSuggest();
-			
-			// Only load data automatically if there are search parameters in the URL
-			const params = new URLSearchParams(window.location.search);
-			if (params.get('q') || params.get('author') || params.get('dynasty') || params.get('category')) {
-				if (params.get('q')) document.getElementById('q').value = params.get('q');
-				if (params.get('author')) document.getElementById('author').value = params.get('author');
-				if (params.get('dynasty')) document.getElementById('dynasty').value = params.get('dynasty');
-				if (params.get('category')) document.getElementById('category').value = params.get('category');
-				await loadData();
-			} else {
-				// Clear the loading state and show an empty state message
-				document.getElementById('loading').classList.remove('active');
-				document.getElementById('results').innerHTML = '<p class="empty" style="text-align: center; color: #666; margin-top: 40px;">请输入关键词或点击上方分类开始探索诗词世界。</p>';
+			const loadingEl = document.getElementById('loading');
+			try {
+				renderCollectionsUI();
+				const preloadResults = await Promise.allSettled([loadCategories(), loadDynastyStats()]);
+				preloadResults
+					.filter(result => result.status === 'rejected')
+					.forEach(result => console.error(result.reason));
+				bindAuthorSuggest();
+				
+				// Only load data automatically if there are search parameters in the URL
+				const params = new URLSearchParams(window.location.search);
+				if (params.get('q') || params.get('author') || params.get('dynasty') || params.get('category')) {
+					if (params.get('q')) document.getElementById('q').value = params.get('q');
+					if (params.get('author')) document.getElementById('author').value = params.get('author');
+					if (params.get('dynasty')) document.getElementById('dynasty').value = params.get('dynasty');
+					if (params.get('category')) document.getElementById('category').value = params.get('category');
+					await loadData();
+				} else {
+					document.getElementById('results').innerHTML = '<p class="empty" style="text-align: center; color: #666; margin-top: 40px;">请输入关键词或点击上方分类开始探索诗词世界。</p>';
+				}
+			} catch (err) {
+				console.error(err);
+				document.getElementById('summary').textContent = '初始化失败，请稍后再试';
+				document.getElementById('results').innerHTML = '';
+			} finally {
+				if (loadingEl) loadingEl.classList.remove('active');
 			}
 		}
 

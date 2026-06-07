@@ -70,28 +70,36 @@ def get_conn():
 	token = os.environ.get("TURSO_AUTH_TOKEN")
 	if url and token and libsql:
 		conn = libsql.connect(url, auth_token=token)
-		# libsql builtins.Connection doesn't have row_factory. We will map rows manually using dict_factory below.
 		return conn
 
 	conn = sqlite3.connect(DB_PATH)
 	conn.row_factory = sqlite3.Row
 	return conn
 
+
+def row_to_dict(row, cursor=None):
+	if row is None:
+		return None
+	if hasattr(row, "keys"):
+		return dict(row)
+	if isinstance(row, dict):
+		return dict(row)
+	if cursor is not None and getattr(cursor, "description", None):
+		cols = [col[0] for col in cursor.description]
+		return dict(zip(cols, row))
+	return dict(row)
+
+
+def rows_to_dicts(rows, cursor=None):
+	return [row_to_dict(row, cursor) for row in rows]
+
+
 def execute_query(query, params=()):
 	conn = get_conn()
 	cur = conn.cursor()
 	cur.execute(query, params)
 	rows = cur.fetchall()
-	
-	# If rows are returned and they are not dict-like, convert them using description
-	if rows and not hasattr(rows[0], 'keys') and type(rows[0]) is tuple:
-		cols = [col[0] for col in cur.description]
-		mapped_rows = [dict(zip(cols, row)) for row in rows]
-		conn.close()
-		return mapped_rows
-	
-	# If using sqlite3.Row, convert to standard dict
-	mapped_rows = [dict(row) for row in rows]
+	mapped_rows = rows_to_dicts(rows, cur)
 	conn.close()
 	return mapped_rows
 
@@ -100,18 +108,7 @@ def execute_query_single(query, params=()):
 	cur = conn.cursor()
 	cur.execute(query, params)
 	row = cur.fetchone()
-	
-	if not row:
-		conn.close()
-		return None
-		
-	if not hasattr(row, 'keys') and type(row) is tuple:
-		cols = [col[0] for col in cur.description]
-		mapped_row = dict(zip(cols, row))
-		conn.close()
-		return mapped_row
-		
-	mapped_row = dict(row)
+	mapped_row = row_to_dict(row, cur)
 	conn.close()
 	return mapped_row
 
@@ -607,10 +604,11 @@ def shared_collection_page(token: str):
 	ensure_share_table(conn)
 	conn.execute("DELETE FROM shared_collections WHERE expires_at <= datetime('now')")
 	conn.commit()
-	row = conn.execute(
+	cur = conn.execute(
 		"SELECT token, name, payload, created_at, expires_at FROM shared_collections WHERE token = ?",
 		(token,),
-	).fetchone()
+	)
+	row = row_to_dict(cur.fetchone(), cur)
 	conn.close()
 
 	if not row:
@@ -766,9 +764,10 @@ def search_poetry():
 			LIMIT ? OFFSET ?
 		"""
 		rows = cur.execute(query_sql, [*params, page_size, offset]).fetchall()
+	items = rows_to_dicts(rows, cur)
 	conn.close()
 
-	return jsonify({"page": page, "page_size": page_size, "total": total, "items": [simplify_poem_row(dict(r)) for r in rows]})
+	return jsonify({"page": page, "page_size": page_size, "total": total, "items": [simplify_poem_row(r) for r in items]})
 
 
 @app.get("/api/authors")
@@ -804,8 +803,9 @@ def suggest_authors():
 			""",
 			(limit,),
 		).fetchall()
+	items = rows_to_dicts(rows, cur)
 	conn.close()
-	return jsonify({"items": [{"author": to_simplified(r["author"]), "cnt": r["cnt"]} for r in rows]})
+	return jsonify({"items": [{"author": to_simplified(r["author"]), "cnt": r["cnt"]} for r in items]})
 
 
 @app.get("/api/stats/dynasty")
@@ -823,8 +823,9 @@ def stats_dynasty():
 		ORDER BY cnt DESC, dynasty ASC
 		"""
 	).fetchall()
+	items = rows_to_dicts(rows, cur)
 	conn.close()
-	return jsonify({"items": [{"dynasty": to_simplified(r["dynasty"]), "cnt": r["cnt"]} for r in rows]})
+	return jsonify({"items": [{"dynasty": to_simplified(r["dynasty"]), "cnt": r["cnt"]} for r in items]})
 
 
 @app.get("/api/categories")
@@ -842,6 +843,7 @@ def categories():
 		ORDER BY cnt DESC, category ASC
 		"""
 	).fetchall()
+	rows = rows_to_dicts(rows, cur)
 	conn.close()
 
 	merged: dict[str, int] = {}
@@ -885,7 +887,8 @@ def create_share_collection():
 		(token, name, payload),
 	)
 	conn.commit()
-	row = conn.execute("SELECT expires_at FROM shared_collections WHERE token = ?", (token,)).fetchone()
+	cur = conn.execute("SELECT expires_at FROM shared_collections WHERE token = ?", (token,))
+	row = row_to_dict(cur.fetchone(), cur)
 	conn.close()
 
 	url = build_public_share_url(token)
