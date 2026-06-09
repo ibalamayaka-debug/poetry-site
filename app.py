@@ -740,8 +740,10 @@ def search_poetry():
 			), ranked AS (
 				SELECT *,
 					ROW_NUMBER() OVER (
-						PARTITION BY title, paragraphs
-						ORDER BY id DESC
+						PARTITION BY SUBSTR(paragraphs, 1, 40)
+						ORDER BY 
+							CASE WHEN translation_baihua IS NOT NULL AND translation_baihua != '' THEN 1 ELSE 2 END,
+							id DESC
 					) AS rn
 				FROM filtered
 			)
@@ -757,8 +759,10 @@ def search_poetry():
 			), ranked AS (
 				SELECT *,
 					ROW_NUMBER() OVER (
-						PARTITION BY title, paragraphs
-						ORDER BY id DESC
+						PARTITION BY SUBSTR(paragraphs, 1, 40)
+						ORDER BY 
+							CASE WHEN translation_baihua IS NOT NULL AND translation_baihua != '' THEN 1 ELSE 2 END,
+							id DESC
 					) AS rn
 				FROM filtered
 			)
