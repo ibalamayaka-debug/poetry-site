@@ -741,7 +741,7 @@ def search_poetry():
 				SELECT *,
 					ROW_NUMBER() OVER (
 						PARTITION BY title, paragraphs
-						ORDER BY id DESC
+						ORDER BY id ASC
 					) AS rn
 				FROM filtered
 			)
@@ -758,14 +758,14 @@ def search_poetry():
 				SELECT *,
 					ROW_NUMBER() OVER (
 						PARTITION BY title, paragraphs
-						ORDER BY id DESC
+						ORDER BY id ASC
 					) AS rn
 				FROM filtered
 			)
 			SELECT id, dynasty, author, title, paragraphs, category, translation_baihua, appreciation
 			FROM ranked
 			WHERE rn = 1
-			ORDER BY id DESC
+			ORDER BY id ASC
 			LIMIT ? OFFSET ?
 		"""
 		rows = cur.execute(query_sql, [*params, page_size, offset]).fetchall()
@@ -777,7 +777,7 @@ def search_poetry():
 			SELECT id, dynasty, author, title, paragraphs, category, translation_baihua, appreciation
 			FROM poems
 			{where_sql}
-			ORDER BY id DESC
+			ORDER BY id ASC
 			LIMIT ? OFFSET ?
 		"""
 		rows = cur.execute(query_sql, [*params, page_size, offset]).fetchall()
