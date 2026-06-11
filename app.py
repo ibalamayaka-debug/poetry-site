@@ -557,7 +557,7 @@ def simplify_poem_row(row: dict) -> dict:
 	paragraphs = clean_paragraphs_for_display(row["paragraphs"], category, row["author"])
 	appreciation_short = build_liqingzhao_appreciation_short(title, paragraphs) if is_liqingzhao_author(author) else ""
 	appreciation_detailed = build_liqingzhao_appreciation_detailed(title, paragraphs) if is_liqingzhao_author(author) else ""
-	translation_baihua = build_liqingzhao_translation(title, paragraphs) if is_liqingzhao_author(author) else (row.get("translation_baihua") or "")
+	translation_baihua = (row.get("translation_baihua") or "") or (build_liqingzhao_translation(title, paragraphs) if is_liqingzhao_author(author) else "")
 	return {
 		"id": row["id"],
 		"dynasty": to_simplified(row["dynasty"]),
