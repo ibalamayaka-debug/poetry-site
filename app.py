@@ -565,9 +565,9 @@ def simplify_poem_row(row: dict) -> dict:
 		"title": title,
 		"paragraphs": paragraphs,
 		"category": category,
-		"appreciation": row.get("appreciation") or appreciation_short,
-		"appreciation_short": appreciation_short,
-		"appreciation_detailed": appreciation_detailed,
+		"appreciation": "",
+		"appreciation_short": "",
+		"appreciation_detailed": "",
 		"translation_baihua": translation_baihua,
 	}
 
